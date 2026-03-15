@@ -5,15 +5,15 @@ import pkg_resources
 
 from mopidy import config, ext
 
-__version__ = pkg_resources.get_distribution("mopidy_pidi").version
+__version__ = pkg_resources.get_distribution("mopidy_pidi_dan").version
 
 logger = logging.getLogger(__name__)
 
 
 class Extension(ext.Extension):
 
-    dist_name = "Mopidy-PiDi"
-    ext_name = "pidi"
+    dist_name = "Mopidy-PiDi-Dan"
+    ext_name = "pidi_dan"
     version = __version__
 
     @classmethod
