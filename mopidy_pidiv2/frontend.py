@@ -114,7 +114,7 @@ class PiDiV2Frontend(pykka.ThreadingActor, core.CoreListener):
         if track.artists is not None:
             artist = ", ".join([artist.name for artist in track.artists])
 
-        self.display.update(title="Hello", album=album, artist=artist)
+        self.display.update(title=title, album=album, artist=artist)
 
         if time_position is not None:
             length = track.length
@@ -127,6 +127,7 @@ class PiDiV2Frontend(pykka.ThreadingActor, core.CoreListener):
 
         art = None
         track_images = self.core.library.get_images([track.uri]).get()
+        logger.debug(f"Got track images for {track.uri}: {track_images}")
         if track.uri in track_images:
             track_images = track_images[track.uri]
             if len(track_images) == 1:
