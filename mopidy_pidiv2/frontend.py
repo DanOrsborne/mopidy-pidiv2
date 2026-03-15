@@ -15,7 +15,7 @@ from .brainz import Brainz
 logger = logging.getLogger(__name__)
 
 
-class PiDiConfig:
+class PiDiV2Config:
     def __init__(self, config=None):
         self.rotation = config.get("rotation", 90)
         self.spi_port = 0
@@ -27,7 +27,7 @@ class PiDiConfig:
         self.blur_album_art = True
 
 
-class PiDiFrontend(pykka.ThreadingActor, core.CoreListener):
+class PiDiV2Frontend(pykka.ThreadingActor, core.CoreListener):
     def __init__(self, config, core):
         super().__init__()
         self.core = core
@@ -35,7 +35,7 @@ class PiDiFrontend(pykka.ThreadingActor, core.CoreListener):
         self.current_track = None
 
     def on_start(self):
-        self.display = PiDi(self.config)
+        self.display = PiDiV2(self.config)
         self.display.start()
         self.display.update(volume=self.core.mixer.get_volume().get())
         if "http" in self.config:
@@ -56,7 +56,7 @@ class PiDiFrontend(pykka.ThreadingActor, core.CoreListener):
                             break
                 if hostname is not None:
                     self.display.update(
-                        title=f"Visit http://{hostname}:{port} to select content."
+                        title=f"Visit1 http://{hostname}:{port} to select content."
                     )
                     self.display.update_album_art(art="")
 
@@ -166,15 +166,15 @@ class PiDiFrontend(pykka.ThreadingActor, core.CoreListener):
         self.display.update(volume=volume)
 
 
-class PiDi:
+class PiDiV2:
     def __init__(self, config):
         self.config = config
         self.cache_dir = Extension.get_data_dir(config)
-        self.display_config = PiDiConfig(config["pidi"])
+        self.display_config = PiDiV2Config(config["pidiv2"])
         self.display_class = Extension.get_display_types()[
-            self.config["pidi"]["display"]
+            self.config["pidiv2"]["display"]
         ]
-        self.idle_timeout = config["pidi"].get("idle_timeout", 0)
+        self.idle_timeout = config["pidiv2"].get("idle_timeout", 0)
 
         self._brainz = Brainz(cache_dir=self.cache_dir)
         self._display = self.display_class(self.display_config)

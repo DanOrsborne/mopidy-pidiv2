@@ -3,7 +3,7 @@ import pykka
 from mopidy import core
 
 import pytest
-from mopidy_pidi import frontend as frontend_lib
+from mopidy_pidiv2 import frontend as frontend_lib
 
 from . import dummy_audio, dummy_backend, dummy_mixer
 
@@ -26,14 +26,14 @@ def frontend():
 
     distribution = pkg_resources.Distribution(__file__)
     endpoint = pkg_resources.EntryPoint.parse(
-        "dummy = mopidy_pidi.plugin:DisplayDummy", dist=distribution
+        "dummy = mopidy_pidiv2.plugin:DisplayDummy", dist=distribution
     )
-    distribution._ep_map = {"pidi.plugin.display": {"dummy": endpoint}}
+    distribution._ep_map = {"pidiv2.plugin.display": {"dummy": endpoint}}
     pkg_resources.working_set.add(distribution, "dummy")
 
-    config = {"pidi": {"display": "dummy"}, "core": {"data_dir": "/tmp"}}
+    config = {"pidiv2": {"display": "dummy"}, "core": {"data_dir": "/tmp"}}
 
-    return frontend_lib.PiDiFrontend(config, dummy_core)
+    return frontend_lib.PiDiV2Frontend(config, dummy_core)
 
 
 def test_on_start(frontend):

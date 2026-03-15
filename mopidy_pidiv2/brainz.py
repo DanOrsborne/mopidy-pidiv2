@@ -18,9 +18,9 @@ class Brainz:
     def __init__(self, cache_dir):
         """Initialize musicbrainz."""
         mus.set_useragent(
-            "python-pidi: A cover art daemon.",
+            "python-pidiv2: A cover art daemon.",
             __version__,
-            "https://github.com/pimoroni/mopidy-pidi",
+            "https://github.com/pimoroni/mopidy-pidiv2",
         )
 
         self._cache_dir = cache_dir
@@ -86,7 +86,7 @@ class Brainz:
         try:
             data = mus.search_releases(artist=artist, release=album, limit=1)
             release_id = data["release-list"][0]["release-group"]["id"]
-            logger.info("mopidy-pidi: musicbrainz using release-id: {release_id}")
+            logger.info("mopidy-pidiv2: musicbrainz using release-id: {release_id}")
 
             return mus.get_release_group_image_front(release_id, size=size)
 
@@ -95,14 +95,14 @@ class Brainz:
                 # raise mus.NetworkError("Failure connecting to MusicBrainz.org")
                 return None
             logger.info(
-                f"mopidy-pidi: musicbrainz retrying download. {retries} retries left!"
+                f"mopidy-pidiv2: musicbrainz retrying download. {retries} retries left!"
             )
             time.sleep(retry_delay)
             self.request_album_art(artist, album, size=size, retries=retries - 1)
 
         except mus.ResponseError:
             logger.info(
-                f"mopidy-pidi: musicbrainz couldn't find album art for {artist} - {album}"
+                f"mopidy-pidiv2: musicbrainz couldn't find album art for {artist} - {album}"
             )
             return None
 

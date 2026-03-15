@@ -5,21 +5,21 @@ import pkg_resources
 
 from mopidy import config, ext
 
-__version__ = pkg_resources.get_distribution("mopidy_pidi").version
+__version__ = pkg_resources.get_distribution("mopidy_pidiv2").version
 
 logger = logging.getLogger(__name__)
 
 
 class Extension(ext.Extension):
 
-    dist_name = "Mopidy-PiDi"
-    ext_name = "pidi"
+    dist_name = "Mopidy-PiDiV2"
+    ext_name = "pidiv2"
     version = __version__
 
     @classmethod
     def get_display_types(self):
         display_types = {}
-        for entry_point in pkg_resources.iter_entry_points("pidi.plugin.display"):
+        for entry_point in pkg_resources.iter_entry_points("pidiv2.plugin.display"):
             try:
                 plugin = entry_point.load()
                 display_types[plugin.option_name] = plugin
@@ -41,6 +41,6 @@ class Extension(ext.Extension):
         return schema
 
     def setup(self, registry):
-        from .frontend import PiDiFrontend
+        from .frontend import PiDiV2Frontend
 
-        registry.add("frontend", PiDiFrontend)
+        registry.add("frontend", PiDiV2Frontend)

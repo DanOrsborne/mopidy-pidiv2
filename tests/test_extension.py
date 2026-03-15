@@ -1,7 +1,7 @@
 from unittest import mock
 
-from mopidy_pidi import Extension
-from mopidy_pidi import frontend as frontend_lib
+from mopidy_pidiv2 import Extension
+from mopidy_pidiv2 import frontend as frontend_lib
 
 
 def test_get_default_config():
@@ -9,7 +9,7 @@ def test_get_default_config():
 
     config = ext.get_default_config()
 
-    assert "[pidi]" in config
+    assert "[pidiv2]" in config
     assert "enabled = true" in config
 
 
@@ -27,4 +27,4 @@ def test_setup():
 
     ext.setup(registry)
 
-    registry.add.assert_called_once_with("frontend", frontend_lib.PiDiFrontend)
+    registry.add.assert_called_once_with("frontend", frontend_lib.PiDiV2Frontend)
