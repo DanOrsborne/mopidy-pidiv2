@@ -170,11 +170,11 @@ class PiDi:
     def __init__(self, config):
         self.config = config
         self.cache_dir = Extension.get_data_dir(config)
-        self.display_config = PiDiConfig(config["pidi"])
+        self.display_config = PiDiConfig(config["pidiv2"])
         self.display_class = Extension.get_display_types()[
-            self.config["pidi"]["display"]
+            self.config["pidiv2"]["display"]
         ]
-        self.idle_timeout = config["pidi"].get("idle_timeout", 0)
+        self.idle_timeout = config["pidiv2"].get("idle_timeout", 0)
 
         self._brainz = Brainz(cache_dir=self.cache_dir)
         self._display = self.display_class(self.display_config)
