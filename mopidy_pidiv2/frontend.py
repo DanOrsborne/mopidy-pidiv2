@@ -28,7 +28,7 @@ class PiDiV2Config:
         self.spi_speed_mhz = 80
         self.backlight_pin = 13
         self.size = 240
-        self.blur_album_art = True
+        self.blur_album_art = False
 
 
 class PiDiV2Frontend(pykka.ThreadingActor, core.CoreListener):
