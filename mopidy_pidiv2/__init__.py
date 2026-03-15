@@ -15,7 +15,6 @@ class Extension(ext.Extension):
     dist_name = "Mopidy-PiDiV2"
     ext_name = "pidiv2"
     version = __version__
-    display_entry_point_groups = ("pidiv2.plugin.display", "pidi.plugin.display")
 
     @classmethod
     def get_display_types(self):
