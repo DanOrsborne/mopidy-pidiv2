@@ -18,18 +18,16 @@ class Extension(ext.Extension):
     display_entry_point_groups = ("pidiv2.plugin.display", "pidi.plugin.display")
 
     @classmethod
-    def get_display_types(cls):
+    def get_display_types(self):
         display_types = {}
-        for group in cls.display_entry_point_groups:
-            for entry_point in pkg_resources.iter_entry_points(group):
-                try:
-                    plugin = entry_point.load()
-                    display_types[plugin.option_name] = plugin
-                except (ImportError) as err:
-                    logger.log(
-                        logging.WARN,
-                        f"Error loading display plugin {entry_point}: {err}",
-                    )
+        for entry_point in pkg_resources.iter_entry_points("pidi.plugin.display"):
+            try:
+                plugin = entry_point.load()
+                display_types[plugin.option_name] = plugin
+            except (ImportError) as err:
+                logger.log(
+                    logging.WARN, f"Error loading display plugin {entry_point}: {err}"
+                )
 
         return display_types
 
@@ -44,6 +42,6 @@ class Extension(ext.Extension):
         return schema
 
     def setup(self, registry):
-        from .frontend import PiDiV2Frontend
+        from .frontend import PiDiFrontend
 
-        registry.add("frontend", PiDiV2Frontend)
+        registry.add("frontend", PiDiFrontend)
