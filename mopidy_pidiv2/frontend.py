@@ -15,7 +15,7 @@ from .brainz import Brainz
 logger = logging.getLogger(__name__)
 
 
-class PiDiConfig:
+class PiDiV2Config:
     def __init__(self, config=None):
         self.rotation = config.get("rotation", 90)
         self.spi_port = 0
@@ -35,7 +35,7 @@ class PiDiV2Frontend(pykka.ThreadingActor, core.CoreListener):
         self.current_track = None
 
     def on_start(self):
-        self.display = PiDi(self.config)
+        self.display = PiDiV2(self.config)
         self.display.start()
         self.display.update(volume=self.core.mixer.get_volume().get())
         if "http" in self.config:
@@ -166,11 +166,11 @@ class PiDiV2Frontend(pykka.ThreadingActor, core.CoreListener):
         self.display.update(volume=volume)
 
 
-class PiDi:
+class PiDiV2:
     def __init__(self, config):
         self.config = config
         self.cache_dir = Extension.get_data_dir(config)
-        self.display_config = PiDiConfig(config["pidiv2"])
+        self.display_config = PiDiV2Config(config["pidiv2"])
         self.display_class = Extension.get_display_types()[
             self.config["pidiv2"]["display"]
         ]

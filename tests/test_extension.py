@@ -40,8 +40,6 @@ def test_get_display_types_supports_legacy_entry_point_group():
     )
 
     def iter_entry_points(group):
-        if group == "pidiv2.plugin.display":
-            return []
         if group == "pidi.plugin.display":
             return [endpoint]
         return []
