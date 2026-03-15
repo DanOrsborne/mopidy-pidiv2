@@ -130,13 +130,15 @@ class PiDiV2Frontend(pykka.ThreadingActor, core.CoreListener):
 
         art = None
         track_images = self.core.library.get_images([track.uri]).get()
-        logger.debug(f"Got track images for {track.uri}: {track_images}")
+        logger.warning(f"mopidy-pidiv2: got {len(track_images)} image entries for {track.uri}")
         if track.uri in track_images:
             images = track_images[track.uri]
+            logger.warning(f"mopidy-pidiv2: {len(images)} image(s) available for track")
             # Prefer embedded art (data: URIs from MP3/FLAC tags) — no dimensions available
             for image in images:
                 if image.uri.startswith("data:"):
                     art = image.uri
+                    logger.warning("mopidy-pidiv2: using embedded data: URI cover art")
                     break
             if art is None:
                 # Fall back to a remote image that meets the minimum display size
@@ -144,10 +146,14 @@ class PiDiV2Frontend(pykka.ThreadingActor, core.CoreListener):
                     if image.width is not None and image.height is not None:
                         if image.height >= 240 and image.width >= 240:
                             art = image.uri
+                            logger.warning(f"mopidy-pidiv2: using sized remote image {image.width}x{image.height}: {art}")
                             break
             if art is None and images:
                 # Last resort: use whatever is available
                 art = images[0].uri
+                logger.warning(f"mopidy-pidiv2: using first available image as fallback: {art[:80]}")
+        else:
+            logger.warning(f"mopidy-pidiv2: no images returned for {track.uri}, falling back to MusicBrainz")
 
         self.display.update_album_art(art=art)
 
@@ -216,48 +222,58 @@ class PiDiV2:
         _album = self.title if self.album is None or self.album == "" else self.album
 
         if art is not None:
-            if os.path.isfile(art):
-                # Art is already a locally cached file we can use
-                self._handle_album_art(art)
+            logger.warning(f"mopidy-pidiv2: update_album_art called with uri scheme '{art.split(':')[0]}:'")
+            if art.startswith("data:"):
+                # Embedded cover art from MP3/FLAC ID3 tags via mopidy-local.
+                # Must be checked before os.path.isfile — the URI is too long for the
+                # filesystem and raises OSError on Linux.
+                cache_key = hashlib.md5(art.encode("utf-8")).hexdigest()
+                file_name = os.path.join(self.cache_dir, f"{cache_key}.jpg")
+                if not os.path.isfile(file_name):
+                    logger.warning(f"mopidy-pidiv2: decoding embedded cover art to {file_name}")
+                    try:
+                        _, encoded = art.split(",", 1)
+                        self._brainz.save_album_art(base64.b64decode(encoded), file_name)
+                    except Exception as e:
+                        logger.error(f"mopidy-pidiv2: failed to decode embedded cover art: {e}")
+                        return
+                else:
+                    logger.warning(f"mopidy-pidiv2: embedded cover art cache hit: {file_name}")
+                self._handle_album_art(file_name)
                 return
 
             elif art.startswith("file://"):
                 # Local file URI from mopidy-local
                 file_path = unquote(art[7:])
                 if os.path.isfile(file_path):
+                    logger.warning(f"mopidy-pidiv2: using local file URI: {file_path}")
                     self._handle_album_art(file_path)
                     return
-
-            elif art.startswith("data:"):
-                # Embedded cover art from MP3/FLAC ID3 tags via mopidy-local
-                cache_key = hashlib.md5(art.encode("utf-8")).hexdigest()
-                file_name = os.path.join(self.cache_dir, f"{cache_key}.jpg")
-                if not os.path.isfile(file_name):
-                    try:
-                        _, encoded = art.split(",", 1)
-                        self._brainz.save_album_art(base64.b64decode(encoded), file_name)
-                    except Exception as e:
-                        logger.warning(f"mopidy-pidiv2: failed to decode embedded cover art: {e}")
-                        return
-                self._handle_album_art(file_name)
-                return
+                else:
+                    logger.error(f"mopidy-pidiv2: local file URI not found on disk: {file_path}")
 
             elif art.startswith("http://") or art.startswith("https://"):
                 file_name = self._brainz.get_cache_file_name(art)
 
                 if os.path.isfile(file_name):
-                    # If a cached file already exists, use it!
+                    logger.warning(f"mopidy-pidiv2: remote art cache hit: {file_name}")
                     self._handle_album_art(file_name)
                     return
 
                 else:
-                    # Otherwise, request the URL and save it!
+                    logger.warning(f"mopidy-pidiv2: downloading remote art: {art}")
                     response = requests.get(art)
                     if response.status_code == 200:
                         self._brainz.save_album_art(response.content, file_name)
                         self._handle_album_art(file_name)
                         return
+                    else:
+                        logger.error(f"mopidy-pidiv2: remote art download failed with HTTP {response.status_code}: {art}")
 
+            else:
+                logger.error(f"mopidy-pidiv2: unrecognised art URI scheme, skipping: {art[:80]}")
+
+        logger.warning(f"mopidy-pidiv2: falling back to MusicBrainz for '{self.artist} - {_album}'")
         art = self._brainz.get_album_art(self.artist, _album, self._handle_album_art)
 
     def update(self, **kwargs):
