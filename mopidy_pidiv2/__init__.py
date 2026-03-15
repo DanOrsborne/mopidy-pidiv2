@@ -19,7 +19,7 @@ class Extension(ext.Extension):
     @classmethod
     def get_display_types(self):
         display_types = {}
-        for entry_point in pkg_resources.iter_entry_points("pidiv2.plugin.display"):
+        for entry_point in pkg_resources.iter_entry_points("pidi.plugin.display"):
             try:
                 plugin = entry_point.load()
                 display_types[plugin.option_name] = plugin
@@ -41,6 +41,6 @@ class Extension(ext.Extension):
         return schema
 
     def setup(self, registry):
-        from .frontend import PiDiFrontend
+        from .frontend import PiDiV2Frontend
 
-        registry.add("frontend", PiDiFrontend)
+        registry.add("frontend", PiDiV2Frontend)

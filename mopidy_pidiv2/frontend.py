@@ -27,7 +27,7 @@ class PiDiConfig:
         self.blur_album_art = True
 
 
-class PiDiFrontend(pykka.ThreadingActor, core.CoreListener):
+class PiDiV2Frontend(pykka.ThreadingActor, core.CoreListener):
     def __init__(self, config, core):
         super().__init__()
         self.core = core
