@@ -35,6 +35,8 @@ class PiDiV2Frontend(pykka.ThreadingActor, core.CoreListener):
         self.current_track = None
 
     def on_start(self):
+
+        logger.warn("this is mycode")
         self.display = PiDiV2(self.config)
         self.display.start()
         self.display.update(volume=self.core.mixer.get_volume().get())
