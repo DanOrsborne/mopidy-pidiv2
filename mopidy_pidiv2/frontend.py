@@ -131,6 +131,7 @@ class PiDiV2Frontend(pykka.ThreadingActor, core.CoreListener):
             self.display.update(elapsed=float(time_position), length=float(length))
 
         # APIC-only mode: always extract embedded album art directly from track file metadata.
+        logger.warning("mopidy-pidiv2: extracting embedded album art for current track" f" (URI: {track.uri})")
         art = self._extract_embedded_apic_data_uri(track.uri)
 
         self.display.update_album_art(art=art)
