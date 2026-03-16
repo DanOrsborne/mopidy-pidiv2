@@ -39,15 +39,14 @@ class PiDiV2Frontend(pykka.ThreadingActor, core.CoreListener):
         self.current_track = None
 
     def on_start(self):
-
-        
         self.display = PiDiV2(self.config)
         self.display.start()
         self.display.update(volume=self.core.mixer.get_volume().get())
+
+        logger.warning("mopidy-pidiv2: frontend started, loading current track info")
         art = self._brainz.get_default_art()
         self.display.update_album_art(art=art)
-        
-                    
+        logger.warning("mopidy-pidiv2: ending frontend startup")               
 
     def on_stop(self):
         self.display.stop()
