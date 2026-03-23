@@ -119,9 +119,54 @@ class PiDiV2Frontend(pykka.ThreadingActor, core.CoreListener):
 
     def _on_button_next(self):
         try:
-            self.core.playback.next()
+            track = self.core.playback.get_current_track().get(timeout=2)
+            next_path = self._next_mp3_path(track)
+            if next_path is None:
+                return
+            self._play_file_path(next_path)
         except Exception as error:
             logger.error(f"mopidy-pidiv2: next button error: {error}")
+
+    def _next_mp3_path(self, current_track):
+        if current_track is None:
+            return None
+        current_path = self._resolve_track_file_path(current_track.uri)
+        if current_path is None:
+            return None
+        directory = os.path.dirname(current_path)
+        mp3_files = sorted(
+            f for f in os.listdir(directory)
+            if f.lower().endswith(".mp3") and f.lower() != "startup.mp3"
+        )
+        if not mp3_files:
+            return None
+        current_name = os.path.basename(current_path)
+        try:
+            idx = mp3_files.index(current_name)
+        except ValueError:
+            idx = -1
+        next_name = mp3_files[(idx + 1) % len(mp3_files)]
+        return os.path.join(directory, next_name)
+
+    def _play_file_path(self, file_path):
+        media_dir = self.config.get("local", {}).get("media_dir")
+        uris = []
+        if media_dir:
+            try:
+                relative_path = os.path.relpath(file_path, media_dir).replace(os.sep, "/")
+                uris.append(f"local:track:{quote(relative_path)}")
+            except ValueError:
+                pass
+        uris.append(Path(file_path).resolve().as_uri())
+        self.core.playback.stop().get()
+        self.core.tracklist.clear().get()
+        for uri in uris:
+            tl_tracks = self.core.tracklist.add(uris=[uri]).get()
+            if tl_tracks:
+                self.core.playback.play(tl_track=tl_tracks[0]).get()
+                logger.warning(f"mopidy-pidiv2: next button playing {file_path} via {uri}")
+                return
+        logger.warning(f"mopidy-pidiv2: next button could not play {file_path}")
 
     def _rfid_enabled(self):
         value = self._pidiv2_config().get("rfid_enabled", False)
