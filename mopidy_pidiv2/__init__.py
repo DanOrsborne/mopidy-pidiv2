@@ -46,6 +46,9 @@ class Extension(ext.Extension):
         schema["button_volume_down_pin"] = config.Integer(minimum=0)
         schema["button_volume_up_pin"] = config.Integer(minimum=0)
         schema["shutdown_hold_time"] = config.Integer(minimum=1)
+        schema["ups_enabled"] = config.Boolean()
+        schema["ups_shutdown_threshold"] = config.Integer(minimum=1, maximum=100)
+        schema["ups_poll_interval"] = config.Integer(minimum=1)
         return schema
 
     def setup(self, registry):

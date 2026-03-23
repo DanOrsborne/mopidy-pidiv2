@@ -21,6 +21,11 @@ try:
 except ImportError:
     GPIOButton = None
 
+try:
+    import psutil
+except ImportError:
+    psutil = None
+
 import pykka
 from mopidy import core
 from mutagen.id3 import ID3
@@ -58,6 +63,8 @@ class PiDiV2Frontend(pykka.ThreadingActor, core.CoreListener):
         self._rfid_running = threading.Event()
         self._last_rfid_uid = None
         self._gpio_buttons = []
+        self._ups_thread = None
+        self._ups_running = threading.Event()
 
     def on_start(self):
         self.display = PiDiV2(self.config)
@@ -67,8 +74,10 @@ class PiDiV2Frontend(pykka.ThreadingActor, core.CoreListener):
         self.display.update_album_art(art=art)
         self._start_rfid_listener()
         self._start_buttons()
+        self._start_ups_monitor()
 
     def on_stop(self):
+        self._stop_ups_monitor()
         self._stop_rfid_listener()
         self._stop_buttons()
         self.display.stop()
@@ -141,8 +150,51 @@ class PiDiV2Frontend(pykka.ThreadingActor, core.CoreListener):
 
     def _on_button_shutdown(self):
         logger.warning("mopidy-pidiv2: shutdown hold detected — halting system")
+        self._do_shutdown()
+
+    def _do_shutdown(self):
         import subprocess
         subprocess.run(["sudo", "shutdown", "-h", "now"])
+
+    def _start_ups_monitor(self):
+        cfg = self._pidiv2_config()
+        if not cfg.get("ups_enabled", False):
+            return
+        if psutil is None:
+            logger.error("mopidy-pidiv2: ups_enabled but psutil is not installed")
+            return
+        self._ups_running.set()
+        self._ups_thread = threading.Thread(
+            target=self._ups_loop, name="pidiv2-ups", daemon=True
+        )
+        self._ups_thread.start()
+        logger.info("mopidy-pidiv2: UPS monitor started")
+
+    def _stop_ups_monitor(self):
+        self._ups_running.clear()
+        if self._ups_thread is not None:
+            self._ups_thread.join(timeout=5.0)
+            self._ups_thread = None
+
+    def _ups_loop(self):
+        cfg = self._pidiv2_config()
+        threshold = cfg.get("ups_shutdown_threshold", 10)
+        poll_interval = cfg.get("ups_poll_interval", 60)
+        while self._ups_running.is_set():
+            battery = psutil.sensors_battery()
+            if battery is not None and not battery.power_plugged:
+                pct = battery.percent
+                logger.warning(
+                    f"mopidy-pidiv2: UPS on battery at {pct:.0f}% "
+                    f"(threshold {threshold}%)"
+                )
+                if pct <= threshold:
+                    logger.warning(
+                        "mopidy-pidiv2: UPS below threshold — shutting down"
+                    )
+                    self._do_shutdown()
+                    return
+            self._ups_running.wait(timeout=poll_interval)
 
     def _on_button_volume_down(self):
         try:
