@@ -124,6 +124,11 @@ class PiDiV2Frontend(pykka.ThreadingActor, core.CoreListener):
         import subprocess
         subprocess.run(["sudo", "shutdown", "-h", "now"])
 
+    def _on_button_shutdown(self):
+        logger.warning("mopidy-pidiv2: shutdown hold detected — halting system")
+        import subprocess
+        subprocess.run(["sudo", "shutdown", "-h", "now"])
+
     def _on_button_next(self):
         try:
             track = self.core.playback.get_current_track().get(timeout=2)

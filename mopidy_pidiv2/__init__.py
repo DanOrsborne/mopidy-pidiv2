@@ -43,6 +43,7 @@ class Extension(ext.Extension):
         schema["rfid_debounce"] = config.Float(minimum=0)
         schema["button_play_pause_pin"] = config.Integer(minimum=0)
         schema["button_next_pin"] = config.Integer(minimum=0)
+        schema["shutdown_hold_time"] = config.Integer(minimum=1)
         return schema
 
     def setup(self, registry):
