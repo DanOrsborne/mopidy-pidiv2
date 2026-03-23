@@ -16,6 +16,11 @@ except ImportError:
     busio = None
     PN532_I2C = None
 
+try:
+    from gpiozero import Button as GPIOButton
+except ImportError:
+    GPIOButton = None
+
 import pykka
 from mopidy import core
 from mutagen.id3 import ID3
@@ -52,6 +57,7 @@ class PiDiV2Frontend(pykka.ThreadingActor, core.CoreListener):
         self._rfid_thread = None
         self._rfid_running = threading.Event()
         self._last_rfid_uid = None
+        self._gpio_buttons = []
 
     def on_start(self):
         self.display = PiDiV2(self.config)
@@ -60,14 +66,62 @@ class PiDiV2Frontend(pykka.ThreadingActor, core.CoreListener):
         art = self._extract_embedded_apic_data_uri("file:///home/pi/Music/startup.mp3")
         self.display.update_album_art(art=art)
         self._start_rfid_listener()
+        self._start_buttons()
 
     def on_stop(self):
         self._stop_rfid_listener()
+        self._stop_buttons()
         self.display.stop()
         self.display = None
 
     def _pidiv2_config(self):
         return self.config.get("pidiv2", {})
+
+    def _start_buttons(self):
+        if GPIOButton is None:
+            logger.warning(
+                "mopidy-pidiv2: gpiozero not installed — GPIO buttons disabled"
+            )
+            return
+
+        cfg = self._pidiv2_config()
+        play_pause_pin = cfg.get("button_play_pause_pin", 0)
+        next_pin = cfg.get("button_next_pin", 0)
+
+        if play_pause_pin:
+            btn = GPIOButton(play_pause_pin)
+            btn.when_pressed = self._on_button_play_pause
+            self._gpio_buttons.append(btn)
+            logger.info(
+                f"mopidy-pidiv2: play/pause button on GPIO {play_pause_pin}"
+            )
+
+        if next_pin:
+            btn = GPIOButton(next_pin)
+            btn.when_pressed = self._on_button_next
+            self._gpio_buttons.append(btn)
+            logger.info(f"mopidy-pidiv2: next button on GPIO {next_pin}")
+
+    def _stop_buttons(self):
+        for btn in self._gpio_buttons:
+            btn.close()
+        self._gpio_buttons.clear()
+
+    def _on_button_play_pause(self):
+        try:
+            state = self.core.playback.get_state().get(timeout=2)
+            if state == "playing":
+                self.core.playback.pause()
+            else:
+                self.core.playback.play()
+        except Exception as error:
+            logger.error(f"mopidy-pidiv2: play/pause button error: {error}")
+
+    def _on_button_next(self):
+        try:
+            self.core.playback.next()
+        except Exception as error:
+            logger.error(f"mopidy-pidiv2: next button error: {error}")
 
     def _rfid_enabled(self):
         value = self._pidiv2_config().get("rfid_enabled", False)

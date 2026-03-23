@@ -41,6 +41,8 @@ class Extension(ext.Extension):
         schema["rfid_enabled"] = config.Boolean()
         schema["rfid_poll_interval"] = config.Float(minimum=0)
         schema["rfid_debounce"] = config.Float(minimum=0)
+        schema["button_play_pause_pin"] = config.Integer(minimum=0)
+        schema["button_next_pin"] = config.Integer(minimum=0)
         return schema
 
     def setup(self, registry):
