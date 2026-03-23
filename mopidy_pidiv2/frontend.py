@@ -37,13 +37,13 @@ class PiDiV2Frontend(pykka.ThreadingActor, core.CoreListener):
         self.core = core
         self.config = config
         self.current_track = None
-        
+
 
     def on_start(self):
         self.display = PiDiV2(self.config)
         self.display.start()
         self.display.update(volume=self.core.mixer.get_volume().get())
-        art = self._extract_embedded_apic_data_uri("file:///home/pi/Music/664c8243-e17f-4237-9c7a-b49f90c421d6.mp3")
+        art = self._extract_embedded_apic_data_uri("file:///home/pi/Music/startup.mp3")
         self.display.update_album_art(art=art)
                
 
