@@ -308,10 +308,16 @@ class PiDiV2Frontend(pykka.ThreadingActor, core.CoreListener):
                         f"{power_state}"
                     )
                     self.display.update_battery(percent=pct, plugged=plugged)
-                    if plugged is False and pct <= threshold:
+                    should_shutdown = pct <= threshold and plugged is not True
+                    if should_shutdown:
+                        shutdown_reason = "battery threshold reached"
+                        if plugged is None:
+                            shutdown_reason = (
+                                "battery threshold reached with unknown power state"
+                            )
                         logger.warning(
                             f"mopidy-pidiv2: UPS at {pct:.0f}% "
-                            f"<= threshold {threshold}% - shutting down"
+                            f"<= threshold {threshold}% - {shutdown_reason}, shutting down"
                         )
                         self._do_shutdown()
                         return
