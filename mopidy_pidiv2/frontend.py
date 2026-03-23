@@ -4,7 +4,16 @@ import logging
 import os
 import threading
 import time
-from urllib.parse import unquote, urlparse
+from urllib.parse import quote, unquote, urlparse
+
+try:
+    import board
+    import busio
+    from adafruit_pn532.i2c import PN532_I2C
+except ImportError:
+    board = None
+    busio = None
+    PN532_I2C = None
 
 import pykka
 from mopidy import core
@@ -37,7 +46,12 @@ class PiDiV2Frontend(pykka.ThreadingActor, core.CoreListener):
         self.core = core
         self.config = config
         self.current_track = None
-
+        self._rfid_i2c = None
+        self._rfid_reader = None
+        self._rfid_thread = None
+        self._rfid_running = threading.Event()
+        self._last_rfid_uid = None
+        self._last_rfid_seen_at = 0.0
 
     def on_start(self):
         self.display = PiDiV2(self.config)
@@ -45,11 +59,153 @@ class PiDiV2Frontend(pykka.ThreadingActor, core.CoreListener):
         self.display.update(volume=self.core.mixer.get_volume().get())
         art = self._extract_embedded_apic_data_uri("file:///home/pi/Music/startup.mp3")
         self.display.update_album_art(art=art)
-               
+        self._start_rfid_listener()
 
     def on_stop(self):
+        self._stop_rfid_listener()
         self.display.stop()
         self.display = None
+
+    def _pidiv2_config(self):
+        return self.config.get("pidiv2", {})
+
+    def _rfid_enabled(self):
+        value = self._pidiv2_config().get("rfid_enabled", False)
+        if isinstance(value, str):
+            return value.strip().lower() in {"1", "true", "yes", "on"}
+        return bool(value)
+
+    def _rfid_poll_interval(self):
+        value = self._pidiv2_config().get("rfid_poll_interval", 0.5)
+        try:
+            return float(value)
+        except (TypeError, ValueError):
+            return 0.5
+
+    def _rfid_debounce_seconds(self):
+        value = self._pidiv2_config().get("rfid_debounce", 1.0)
+        try:
+            return float(value)
+        except (TypeError, ValueError):
+            return 1.0
+
+    def _start_rfid_listener(self):
+        if not self._rfid_enabled():
+            logger.info("mopidy-pidiv2: RFID reader support disabled")
+            return
+
+        if board is None or busio is None or PN532_I2C is None:
+            logger.error(
+                "mopidy-pidiv2: RFID reader enabled but PN532 dependencies are not installed"
+            )
+            return
+
+        try:
+            self._rfid_i2c = busio.I2C(board.SCL, board.SDA)
+            self._rfid_reader = PN532_I2C(self._rfid_i2c, debug=False)
+            self._rfid_reader.SAM_configuration()
+            firmware_version = self._rfid_reader.firmware_version
+            logger.warning(
+                "mopidy-pidiv2: PN532 ready with firmware "
+                f"{firmware_version[1]}.{firmware_version[2]}"
+            )
+        except Exception as error:
+            logger.error(f"mopidy-pidiv2: failed to initialize PN532 reader: {error}")
+            self._cleanup_rfid_reader()
+            return
+
+        self._rfid_running.set()
+        self._rfid_thread = threading.Thread(
+            target=self._rfid_loop,
+            name="pidiv2-rfid",
+            daemon=True,
+        )
+        self._rfid_thread.start()
+
+    def _stop_rfid_listener(self):
+        self._rfid_running.clear()
+        if self._rfid_thread is not None:
+            self._rfid_thread.join(timeout=2.0)
+            self._rfid_thread = None
+        self._cleanup_rfid_reader()
+
+    def _cleanup_rfid_reader(self):
+        self._rfid_reader = None
+        if self._rfid_i2c is not None and hasattr(self._rfid_i2c, "deinit"):
+            try:
+                self._rfid_i2c.deinit()
+            except Exception as error:
+                logger.error(f"mopidy-pidiv2: failed to close PN532 I2C bus: {error}")
+        self._rfid_i2c = None
+
+    def _rfid_loop(self):
+        poll_interval = self._rfid_poll_interval()
+        debounce_seconds = self._rfid_debounce_seconds()
+
+        while self._rfid_running.is_set():
+            try:
+                uid = self._rfid_reader.read_passive_target(timeout=poll_interval)
+            except Exception as error:
+                logger.error(f"mopidy-pidiv2: PN532 read failed: {error}")
+                time.sleep(poll_interval)
+                continue
+
+            if uid is None:
+                continue
+
+            uid_str = "".join(f"{value:02X}" for value in uid)
+            now = time.time()
+            if (
+                uid_str == self._last_rfid_uid
+                and now - self._last_rfid_seen_at < debounce_seconds
+            ):
+                continue
+
+            self._last_rfid_uid = uid_str
+            self._last_rfid_seen_at = now
+            logger.warning(f"mopidy-pidiv2: RFID card detected: {uid_str}")
+            self._play_rfid_uid(uid_str)
+
+    def _build_rfid_track_uri(self, uid_str):
+        media_dir = self.config.get("local", {}).get("media_dir")
+        if not media_dir:
+            logger.error(
+                "mopidy-pidiv2: RFID playback requires local.media_dir to be configured"
+            )
+            return None
+
+        file_name = f"{uid_str}.mp3"
+        file_path = os.path.join(media_dir, file_name)
+        if not os.path.isfile(file_path):
+            logger.warning(
+                f"mopidy-pidiv2: no RFID track found for card {uid_str} at {file_path}"
+            )
+            return None
+
+        return f"local:track:{quote(file_name)}"
+
+    def _play_rfid_uid(self, uid_str):
+        track_uri = self._build_rfid_track_uri(uid_str)
+        if track_uri is None:
+            return
+
+        try:
+            self.core.playback.stop().get()
+            self.core.tracklist.clear().get()
+            tl_tracks = self.core.tracklist.add(uris=[track_uri]).get()
+            if not tl_tracks:
+                logger.warning(
+                    f"mopidy-pidiv2: Mopidy did not add a track for RFID URI {track_uri}"
+                )
+                return
+            self.core.playback.play(tl_track=tl_tracks[0]).get()
+            logger.warning(
+                f"mopidy-pidiv2: started RFID playback for card {uid_str} using {track_uri}"
+            )
+        except Exception as error:
+            logger.error(
+                f"mopidy-pidiv2: failed to start RFID playback for card {uid_str}: {error}"
+            )
 
     def get_ifaddress(self, iface, family):
         try:
