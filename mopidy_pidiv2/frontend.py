@@ -189,18 +189,23 @@ class PiDiV2Frontend(pykka.ThreadingActor, core.CoreListener):
         poll_interval = cfg.get("ups_poll_interval", 60)
         while self._ups_running.is_set():
             battery = psutil.sensors_battery()
-            if battery is not None and not battery.power_plugged:
-                pct = battery.percent
-                logger.warning(
-                    f"mopidy-pidiv2: UPS on battery at {pct:.0f}% "
-                    f"(threshold {threshold}%)"
+            if battery is not None:
+                self.display.update_battery(
+                    percent=battery.percent,
+                    plugged=battery.power_plugged,
                 )
-                if pct <= threshold:
+                if not battery.power_plugged:
+                    pct = battery.percent
                     logger.warning(
-                        "mopidy-pidiv2: UPS below threshold — shutting down"
+                        f"mopidy-pidiv2: UPS on battery at {pct:.0f}% "
+                        f"(threshold {threshold}%)"
                     )
-                    self._do_shutdown()
-                    return
+                    if pct <= threshold:
+                        logger.warning(
+                            "mopidy-pidiv2: UPS below threshold — shutting down"
+                        )
+                        self._do_shutdown()
+                        return
             self._ups_running.wait(timeout=poll_interval)
 
     def _on_button_volume_down(self):
@@ -667,6 +672,10 @@ class PiDiV2:
         self._last_progress_value = 0
         self._last_state_change = 0
         self._last_art = ""
+        self._last_raw_art = None
+        self._battery_percent = None
+        self._battery_plugged = True
+        self._battery_overlay_path = os.path.join(self.cache_dir, "_battery_overlay.jpg")
 
     def start(self):
         if self._thread is not None:
@@ -684,9 +693,38 @@ class PiDiV2:
         self._display.stop()
 
     def _handle_album_art(self, art):
-        if art != self._last_art:
-            self._display.update_album_art(art)
-            self._last_art = art
+        self._last_raw_art = art
+        composited = self._compose_art_with_battery(art)
+        if composited != self._last_art:
+            self._display.update_album_art(composited)
+            self._last_art = composited
+
+    def update_battery(self, percent, plugged):
+        self._battery_percent = percent
+        self._battery_plugged = plugged
+        if self._last_raw_art:
+            composited = self._compose_art_with_battery(self._last_raw_art)
+            self._display.update_album_art(composited)
+            self._last_art = composited
+
+    def _compose_art_with_battery(self, art_path):
+        if self._battery_percent is None:
+            return art_path
+        try:
+            from PIL import Image, ImageDraw
+            img = Image.open(art_path).convert("RGB")
+            draw = ImageDraw.Draw(img)
+            icon = "+ " if self._battery_plugged else "- "
+            text = f"{icon}{self._battery_percent:.0f}%"
+            x, y = 6, 6
+            # Drop shadow for readability on any art colour
+            draw.text((x + 1, y + 1), text, fill=(0, 0, 0))
+            draw.text((x, y), text, fill=(255, 255, 255))
+            img.save(self._battery_overlay_path, "JPEG", quality=90)
+            return self._battery_overlay_path
+        except Exception as error:
+            logger.error(f"mopidy-pidiv2: battery overlay failed: {error}")
+            return art_path
 
     def update_album_art(self, art=None):
         if not art:
