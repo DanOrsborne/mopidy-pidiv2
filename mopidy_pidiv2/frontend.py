@@ -120,7 +120,9 @@ class PiDiV2Frontend(pykka.ThreadingActor, core.CoreListener):
     def _on_button_next(self):
         try:
             track = self.core.playback.get_current_track().get(timeout=2)
+            logger.warning(f"mopidy-pidiv2: next pressed, current track={track}")
             next_path = self._next_mp3_path(track)
+            logger.warning(f"mopidy-pidiv2: next path resolved to: {next_path}")
             if next_path is None:
                 return
             self._play_file_path(next_path)
@@ -129,8 +131,10 @@ class PiDiV2Frontend(pykka.ThreadingActor, core.CoreListener):
 
     def _next_mp3_path(self, current_track):
         if current_track is None:
+            logger.warning("mopidy-pidiv2: next: no current track")
             return None
         current_path = self._resolve_track_file_path(current_track.uri)
+        logger.warning(f"mopidy-pidiv2: next: current URI={current_track.uri} path={current_path}")
         if current_path is None:
             return None
         directory = os.path.dirname(current_path)
@@ -138,6 +142,7 @@ class PiDiV2Frontend(pykka.ThreadingActor, core.CoreListener):
             f for f in os.listdir(directory)
             if f.lower().endswith(".mp3") and f.lower() != "startup.mp3"
         )
+        logger.warning(f"mopidy-pidiv2: next: directory={directory} candidates={mp3_files}")
         if not mp3_files:
             return None
         current_name = os.path.basename(current_path)
@@ -146,6 +151,7 @@ class PiDiV2Frontend(pykka.ThreadingActor, core.CoreListener):
         except ValueError:
             idx = -1
         next_name = mp3_files[(idx + 1) % len(mp3_files)]
+        logger.warning(f"mopidy-pidiv2: next: current={current_name} idx={idx} -> next={next_name}")
         return os.path.join(directory, next_name)
 
     def _play_file_path(self, file_path):
