@@ -48,7 +48,7 @@ def test_options_changed(frontend):
     frontend.on_stop()
 
 
-def test_build_rfid_track_uri(monkeypatch):
+def test_build_rfid_track_uris(monkeypatch):
     frontend = frontend_lib.PiDiV2Frontend(
         {
             "pidiv2": {"display": "dummy", "rfid_enabled": True},
@@ -57,15 +57,30 @@ def test_build_rfid_track_uri(monkeypatch):
         mock.Mock(),
     )
 
-    monkeypatch.setattr(frontend_lib.os.path, "isfile", lambda path: path == "/music/ABCD1234.mp3")
+    monkeypatch.setattr(
+        frontend,
+        "_find_rfid_track_path",
+        lambda uid_str: "/music/subdir/ABCD1234.mp3",
+    )
 
-    assert frontend._build_rfid_track_uri("ABCD1234") == "local:track:ABCD1234.mp3"
+    uris = frontend._build_rfid_track_uris("ABCD1234")
+
+    assert uris[0] == "local:track:subdir/ABCD1234.mp3"
+    assert uris[1] == "file:///music/subdir/ABCD1234.mp3"
 
 
 def test_play_rfid_uid(monkeypatch):
     core_proxy = mock.Mock()
     tl_track = mock.Mock()
-    core_proxy.tracklist.add.return_value.get.return_value = [tl_track]
+
+    add_results = [[], [tl_track]]
+
+    def add_side_effect(uris):
+        result = mock.Mock()
+        result.get.return_value = add_results.pop(0)
+        return result
+
+    core_proxy.tracklist.add.side_effect = add_side_effect
 
     frontend = frontend_lib.PiDiV2Frontend(
         {
@@ -77,13 +92,19 @@ def test_play_rfid_uid(monkeypatch):
 
     monkeypatch.setattr(
         frontend,
-        "_build_rfid_track_uri",
-        lambda uid_str: "local:track:ABCD1234.mp3",
+        "_build_rfid_track_uris",
+        lambda uid_str: [
+            "local:track:ABCD1234.mp3",
+            "file:///music/ABCD1234.mp3",
+        ],
     )
 
     frontend._play_rfid_uid("ABCD1234")
 
     core_proxy.playback.stop.assert_called_once_with()
     core_proxy.tracklist.clear.assert_called_once_with()
-    core_proxy.tracklist.add.assert_called_once_with(uris=["local:track:ABCD1234.mp3"])
+    assert core_proxy.tracklist.add.call_args_list == [
+        mock.call(uris=["local:track:ABCD1234.mp3"]),
+        mock.call(uris=["file:///music/ABCD1234.mp3"]),
+    ]
     core_proxy.playback.play.assert_called_once_with(tl_track=tl_track)

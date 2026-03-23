@@ -52,7 +52,6 @@ class PiDiV2Frontend(pykka.ThreadingActor, core.CoreListener):
         self._rfid_thread = None
         self._rfid_running = threading.Event()
         self._last_rfid_uid = None
-        self._last_rfid_seen_at = 0.0
 
     def on_start(self):
         self.display = PiDiV2(self.config)
@@ -82,13 +81,6 @@ class PiDiV2Frontend(pykka.ThreadingActor, core.CoreListener):
             return float(value)
         except (TypeError, ValueError):
             return 0.5
-
-    def _rfid_debounce_seconds(self):
-        value = self._pidiv2_config().get("rfid_debounce", 1.0)
-        try:
-            return float(value)
-        except (TypeError, ValueError):
-            return 1.0
 
     def _start_rfid_listener(self):
         if not self._rfid_enabled():
@@ -141,7 +133,6 @@ class PiDiV2Frontend(pykka.ThreadingActor, core.CoreListener):
 
     def _rfid_loop(self):
         poll_interval = self._rfid_poll_interval()
-        debounce_seconds = self._rfid_debounce_seconds()
 
         while self._rfid_running.is_set():
             try:
@@ -152,18 +143,16 @@ class PiDiV2Frontend(pykka.ThreadingActor, core.CoreListener):
                 continue
 
             if uid is None:
+                # Card removed — allow the same card to trigger again next time.
+                self._last_rfid_uid = None
                 continue
 
             uid_str = "".join(f"{value:02X}" for value in uid)
-            now = time.time()
-            if (
-                uid_str == self._last_rfid_uid
-                and now - self._last_rfid_seen_at < debounce_seconds
-            ):
+            if uid_str == self._last_rfid_uid:
+                # Same card still on the reader — do not replay.
                 continue
 
             self._last_rfid_uid = uid_str
-            self._last_rfid_seen_at = now
             logger.warning(f"mopidy-pidiv2: RFID card detected: {uid_str}")
             self._play_rfid_uid(uid_str)
 
@@ -230,10 +219,10 @@ class PiDiV2Frontend(pykka.ThreadingActor, core.CoreListener):
                 )
                 return
 
-                logger.warning(
-                    "mopidy-pidiv2: no playable URI was accepted for RFID card "
-                    f"{uid_str}"
-                )
+            logger.warning(
+                "mopidy-pidiv2: no playable URI was accepted for RFID card "
+                f"{uid_str}"
+            )
         except Exception as error:
             logger.error(
                 f"mopidy-pidiv2: failed to start RFID playback for card {uid_str}: {error}"
