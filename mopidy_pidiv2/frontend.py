@@ -6,15 +6,6 @@ import threading
 import time
 from urllib.parse import quote, unquote, urlparse
 
-try:
-    import board
-    import busio
-    from adafruit_pn532.i2c import PN532_I2C
-except ImportError:
-    board = None
-    busio = None
-    PN532_I2C = None
-
 import pykka
 from mopidy import core
 from mutagen.id3 import ID3
@@ -52,6 +43,7 @@ class PiDiV2Frontend(pykka.ThreadingActor, core.CoreListener):
         self._rfid_running = threading.Event()
         self._last_rfid_uid = None
         self._last_rfid_seen_at = 0.0
+        self._rfid_modules = None
 
     def on_start(self):
         self.display = PiDiV2(self.config)
@@ -94,15 +86,17 @@ class PiDiV2Frontend(pykka.ThreadingActor, core.CoreListener):
             logger.info("mopidy-pidiv2: RFID reader support disabled")
             return
 
-        if board is None or busio is None or PN532_I2C is None:
+        rfid_modules = self._load_rfid_modules()
+        if rfid_modules is None:
             logger.error(
                 "mopidy-pidiv2: RFID reader enabled but PN532 dependencies are not installed"
             )
             return
 
         try:
+            board, busio, pn532_i2c = rfid_modules
             self._rfid_i2c = busio.I2C(board.SCL, board.SDA)
-            self._rfid_reader = PN532_I2C(self._rfid_i2c, debug=False)
+            self._rfid_reader = pn532_i2c(self._rfid_i2c, debug=False)
             self._rfid_reader.SAM_configuration()
             firmware_version = self._rfid_reader.firmware_version
             logger.warning(
@@ -121,6 +115,20 @@ class PiDiV2Frontend(pykka.ThreadingActor, core.CoreListener):
             daemon=True,
         )
         self._rfid_thread.start()
+
+    def _load_rfid_modules(self):
+        if self._rfid_modules is not None:
+            return self._rfid_modules
+
+        try:
+            import board
+            import busio
+            from adafruit_pn532.i2c import PN532_I2C
+        except ImportError:
+            return None
+
+        self._rfid_modules = (board, busio, PN532_I2C)
+        return self._rfid_modules
 
     def _stop_rfid_listener(self):
         self._rfid_running.clear()
