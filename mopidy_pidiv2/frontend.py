@@ -133,20 +133,27 @@ class PiDiV2Frontend(pykka.ThreadingActor, core.CoreListener):
             btn.close()
         self._gpio_buttons.clear()
 
-    def _on_button_play_pause(self):
+    def _send(self, method, **params):
+        import json
+        import urllib.request
+        payload = json.dumps({
+            "jsonrpc": "2.0",
+            "id": 1,
+            "method": method,
+            "params": params,
+        }).encode()
+        req = urllib.request.Request(
+            "http://localhost:6680/mopidy/rpc",
+            data=payload,
+            headers={"Content-Type": "application/json"},
+        )
         try:
-            state = self.core.playback.get_state().get(timeout=2)
-            if state == "playing":
-                self.core.playback.pause()
-            else:
-                self.core.playback.play()
+            urllib.request.urlopen(req, timeout=2)
         except Exception as error:
-            logger.error(f"mopidy-pidiv2: play/pause button error: {error}")
+            logger.error(f"mopidy-pidiv2: RPC send failed ({method}): {error}")
 
-    def _on_button_shutdown(self):
-        logger.warning("mopidy-pidiv2: shutdown hold detected — halting system")
-        import subprocess
-        subprocess.run(["sudo", "shutdown", "-h", "now"])
+    def _on_button_play_pause(self):
+        self._send("core.playback.play_pause")
 
     def _on_button_shutdown(self):
         logger.warning("mopidy-pidiv2: shutdown hold detected — halting system")
@@ -197,27 +204,59 @@ class PiDiV2Frontend(pykka.ThreadingActor, core.CoreListener):
             self._ups_running.wait(timeout=poll_interval)
 
     def _on_button_volume_down(self):
+        self._send("core.mixer.set_volume", volume=max(0, (self._get_volume() or 0) - 5))
+
+    def _get_volume(self):
+        import json
+        import urllib.request
         try:
-            current = self.core.mixer.get_volume().get(timeout=2)
-            if current is not None:
-                self.core.mixer.set_volume(max(0, current - 5))
+            payload = json.dumps({
+                "jsonrpc": "2.0", "id": 1,
+                "method": "core.mixer.get_volume", "params": {},
+            }).encode()
+            req = urllib.request.Request(
+                "http://localhost:6680/mopidy/rpc",
+                data=payload,
+                headers={"Content-Type": "application/json"},
+            )
+            resp = urllib.request.urlopen(req, timeout=2)
+            return json.loads(resp.read()).get("result")
         except Exception as error:
-            logger.error(f"mopidy-pidiv2: volume down button error: {error}")
+            logger.error(f"mopidy-pidiv2: get_volume failed: {error}")
+            return None
 
     def _on_button_volume_up(self):
-        try:
-            current = self.core.mixer.get_volume().get(timeout=2)
-            if current is not None:
-                self.core.mixer.set_volume(min(100, current + 5))
-        except Exception as error:
-            logger.error(f"mopidy-pidiv2: volume up button error: {error}")
+        self._send("core.mixer.set_volume", volume=min(100, (self._get_volume() or 100) + 5))
 
     def _on_button_next(self):
         try:
-            track = self.core.playback.get_current_track().get(timeout=2)
-            logger.warning(f"mopidy-pidiv2: next pressed, current track={track}")
-            next_path = self._next_mp3_path(track)
-            logger.warning(f"mopidy-pidiv2: next path resolved to: {next_path}")
+            import json
+            import urllib.request
+            payload = json.dumps({
+                "jsonrpc": "2.0", "id": 1,
+                "method": "core.playback.get_current_track", "params": {},
+            }).encode()
+            req = urllib.request.Request(
+                "http://localhost:6680/mopidy/rpc",
+                data=payload,
+                headers={"Content-Type": "application/json"},
+            )
+            resp = urllib.request.urlopen(req, timeout=2)
+            result = json.loads(resp.read()).get("result")
+            track_uri = (result or {}).get("uri")
+            logger.warning(f"mopidy-pidiv2: next pressed, current URI={track_uri}")
+            if track_uri is None:
+                return
+            current_path = self._resolve_track_file_path(track_uri)
+            logger.warning(f"mopidy-pidiv2: next path resolved to: {current_path}")
+            if current_path is None:
+                return
+
+            class _FakeTrack:
+                uri = track_uri
+
+            next_path = self._next_mp3_path(_FakeTrack())
+            logger.warning(f"mopidy-pidiv2: next file: {next_path}")
             if next_path is None:
                 return
             self._play_file_path(next_path)
@@ -259,14 +298,31 @@ class PiDiV2Frontend(pykka.ThreadingActor, core.CoreListener):
             except ValueError:
                 pass
         uris.append(Path(file_path).resolve().as_uri())
-        self.core.playback.stop().get()
-        self.core.tracklist.clear().get()
+        self._send("core.playback.stop")
+        self._send("core.tracklist.clear")
         for uri in uris:
-            tl_tracks = self.core.tracklist.add(uris=[uri]).get()
-            if tl_tracks:
-                self.core.playback.play(tl_track=tl_tracks[0]).get()
-                logger.warning(f"mopidy-pidiv2: next button playing {file_path} via {uri}")
-                return
+            import json
+            import urllib.request
+            try:
+                payload = json.dumps({
+                    "jsonrpc": "2.0", "id": 1,
+                    "method": "core.tracklist.add",
+                    "params": {"uris": [uri]},
+                }).encode()
+                req = urllib.request.Request(
+                    "http://localhost:6680/mopidy/rpc",
+                    data=payload,
+                    headers={"Content-Type": "application/json"},
+                )
+                resp = urllib.request.urlopen(req, timeout=2)
+                tl_tracks = json.loads(resp.read()).get("result") or []
+                if tl_tracks:
+                    self._send("core.playback.play", tlid=tl_tracks[0]["tlid"])
+                    logger.warning(f"mopidy-pidiv2: next button playing {file_path} via {uri}")
+                    return
+                logger.warning(f"mopidy-pidiv2: Mopidy did not add track for {uri}")
+            except Exception as error:
+                logger.error(f"mopidy-pidiv2: _play_file_path failed for {uri}: {error}")
         logger.warning(f"mopidy-pidiv2: next button could not play {file_path}")
 
     def _rfid_enabled(self):
